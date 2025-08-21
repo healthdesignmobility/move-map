@@ -127,16 +127,19 @@
         }
 
       } else if (type === "polygons") {
-        // payload: GeoJSON FeatureCollection (features[].geometry.coordinates[0] = [lon,lat] 배열)
+        // payload: GeoJSON FeatureCollection
         const fc = payload;
         if (fc && fc.type === "FeatureCollection" && Array.isArray(fc.features)) {
           fc.features.forEach(f => {
             const coords = (((f||{}).geometry||{}).coordinates||[])[0];
             if (!Array.isArray(coords)) return;
             const path = coords.map(c => new kakao.maps.LatLng(c[1], c[0]));
+      
+            // 값이 없으면 0으로, 0~1로 클리핑, 0이면 그리지 않음(완전 투명)
             const raw = (((f||{}).properties||{}).opacity_value);
-            const op = clamp(Number(raw == null ? 0 : raw), 0, 1);
-            if (op <= 0) return; 
+            const op = Math.max(0, Math.min(1, Number(raw == null ? 0 : raw)));
+            if (op <= 0) return;
+      
             new kakao.maps.Polygon({
               path,
               strokeWeight: 1,
@@ -218,9 +221,11 @@
         const coords = (((f||{}).geometry||{}).coordinates||[])[0];
         if (!Array.isArray(coords)) return;
         const path = coords.map(c => new kakao.maps.LatLng(c[1], c[0]));
+    
         const raw = (((f||{}).properties||{}).opacity_value);
         const op = Math.max(0, Math.min(1, Number(raw == null ? 0 : raw)));
-        if (op <= 0) return;               // 값 없으면 스킵
+        if (op <= 0) return; // 0이면 스킵(투명)
+    
         new kakao.maps.Polygon({
           path,
           strokeWeight: 1,
