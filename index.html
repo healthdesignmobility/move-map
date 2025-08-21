@@ -217,6 +217,14 @@
     }
   
     function drawPolygons(payload) {
+      // ← 추가: center/level 적용
+      if (payload && payload.center) {
+        map.setCenter(new kakao.maps.LatLng(payload.center.lat, payload.center.lng));
+      }
+      if (payload && typeof payload.level === "number") {
+        map.setLevel(payload.level);
+      }
+    
       (payload.features || []).forEach(f => {
         const coords = (((f||{}).geometry||{}).coordinates||[])[0];
         if (!Array.isArray(coords)) return;
