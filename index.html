@@ -1,139 +1,154 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>MOVE Map</title>
-  <style>
-    html, body, #map { height: 100%; margin: 0; }
-    .label { background:#fff; padding:2px 6px; border:1px solid #ddd; border-radius:4px; font:12px/1.2 sans-serif; }
-  </style>
-  <!-- ⚠️ 여기엔 반드시 'JavaScript 키'를 넣는다(REST키 말고). 노출돼도 '도메인 제한'으로 막힘 -->
-  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=fc1c450fc44c5cda47534a556fe9b4f2&autoload=false&libraries=services,clusterer"></script>
+  <!-- 본인 앱키로 교체 -->
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_JS_KEY"></script>
+  <style>html,body{margin:0;height:100%}#map{width:100%;height:100vh}</style>
 </head>
 <body>
   <div id="map"></div>
   <script>
-    // Streamlit(부모)에서 데이터를 보낼 origin 화이트리스트
-    const ALLOWED_ORIGINS = [
-      "https://move-dashboard.streamlit.app",
-      "http://localhost:8501"
-    ];
-    let map, overlays = [];
-
-    function initMap(centerLat=36.502306, centerLng=127.264738, level=4){
-      map = new kakao.maps.Map(document.getElementById('map'), {
-        center: new kakao.maps.LatLng(centerLat, centerLng),
-        level: level
-      });
+    // ---------- 유틸 ----------
+    function getParams() {
+      const url = new URL(window.location.href);
+      const params = new URLSearchParams(url.search);
+      return {
+        type: params.get("type") || "blank",
+        payloadB64: params.get("payload") || ""
+      };
     }
-
-    function clearAll(){
-      overlays.forEach(o => o.setMap && o.setMap(null));
-      overlays = [];
-    }
-
-    function addMarker(lat, lng, title, size){
-      const pos = new kakao.maps.LatLng(lat, lng);
-      const img = new kakao.maps.MarkerImage(
-        'https://t1.daumcdn.net/localimg/localimages/07/2018/pc/img/marker_spot.png',
-        new kakao.maps.Size(size, Math.round(size*1.35)),
-        { offset: new kakao.maps.Point(Math.round(size/2), Math.round(size*1.35)) }
-      );
-      const marker = new kakao.maps.Marker({ position: pos, image: img, title: title });
-      marker.setMap(map);
-      overlays.push(marker);
-      return pos;
-    }
-
-    function fitBoundsFromPositions(positions){
-      if (!positions.length) return;
-      const b = new kakao.maps.LatLngBounds();
-      positions.forEach(p => b.extend(p));
-      map.setBounds(b, 40, 40, 40, 40);
-    }
-
-    function drawPolyline(path, color='#002642', weight=3, opacity=0.9, style='solid'){
-      const poly = new kakao.maps.Polyline({
-        path: path.map(p => new kakao.maps.LatLng(p.lat, p.lng)),
-        strokeWeight: weight, strokeColor: color, strokeOpacity: opacity, strokeStyle: style
-      });
-      poly.setMap(map);
-      overlays.push(poly);
-    }
-
-    function drawPolygon(ring, fill='#ED553B', opacity=0.6){
-      const poly = new kakao.maps.Polygon({
-        path: ring.map(c => new kakao.maps.LatLng(c[1], c[0])),
-        strokeWeight:1, strokeColor:'#000', strokeOpacity:0.1,
-        fillColor:fill, fillOpacity:opacity
-      });
-      poly.setMap(map);
-      overlays.push(poly);
-    }
-
-    // 메시지 수신: Streamlit이 type별 payload를 보냄
-    window.addEventListener('message', (event) => {
-      if (!ALLOWED_ORIGINS.includes(event.origin)) return;
-      const { type, payload } = event.data || {};
-      if (!type) return;
-
-      if (type === 'SET_MARKERS'){
-        const { center, level, locations=[] } = payload || {};
-        clearAll();
-        if (center) map.setCenter(new kakao.maps.LatLng(center.lat, center.lng));
-        if (level)  map.setLevel(level);
-        const poses = [];
-        locations.forEach(loc => {
-          const pos = addMarker(loc.lat, loc.lng, `${loc.station ?? ''}: ${loc.weight ?? ''}`, loc.scaled_weight ?? 24);
-          poses.push(pos);
-        });
-        fitBoundsFromPositions(poses);
-
-      } else if (type === 'SET_ROUTES'){
-        const { center, level, routes=[], pickups=[] } = payload || {};
-        clearAll();
-        if (center) map.setCenter(new kakao.maps.LatLng(center.lat, center.lng));
-        if (level)  map.setLevel(level);
-        routes.forEach(seg => {
-          drawPolyline(seg.path, seg.color ?? '#3366ff', seg.weight ?? 3, seg.opacity ?? 0.9, seg.style ?? 'shortdash');
-        });
-        const poses = [];
-        pickups.forEach((p, i) => {
-          const pos = addMarker(p.lat, p.lng,
-            `탑승순서:${i+1}\n탑승시간:${p.onboardingTime}\n승객수:${p.passengerCount}\n휠체어수:${p.wheelchairCount}\n서비스유형:${p.serviceType}`, 30);
-          poses.push(pos);
-        });
-        fitBoundsFromPositions(poses);
-
-      } else if (type === 'SET_LINKS'){
-        const { links=[] } = payload || {};
-        clearAll();
-        const poses = [];
-        links.forEach(l => {
-          drawPolyline([{lat:l.start_lat,lng:l.start_lon},{lat:l.end_lat,lng:l.end_lon}],
-                       l.color ?? '#002642', l.weight ?? 8, l.opacity ?? 0.8, 'solid');
-          poses.push(new kakao.maps.LatLng(l.start_lat, l.start_lon));
-          poses.push(new kakao.maps.LatLng(l.end_lat, l.end_lon));
-        });
-        fitBoundsFromPositions(poses);
-
-      } else if (type === 'SET_GEOJSON'){
-        const { features=[] } = payload || {};
-        clearAll();
-        features.forEach(f => {
-          // 단일 링만 처리(멀티/홀은 필요시 확장)
-          const ring = (f.geometry.coordinates[0] || []);
-          drawPolygon(ring, '#ED553B', f.properties?.opacity_value ?? 0.5);
-        });
+    function b64ToJson(b64) {
+      if (!b64) return null;
+      try {
+        // Unicode 안전 base64 decode
+        const str = decodeURIComponent(escape(atob(b64)));
+        return JSON.parse(str);
+      } catch (e) {
+        console.error("payload decode 실패:", e);
+        return null;
       }
-    }, false);
+    }
+    function clamp(n, min, max){ return Math.max(min, Math.min(n, max)); }
 
-    kakao.maps.load(function(){
-      initMap();
-      // 준비됨 알림(선택)
-      if (window.parent) window.parent.postMessage({ type:'MAP_READY' }, "*");
+    // ---------- 지도 초기화 ----------
+    const center = new kakao.maps.LatLng(36.502306, 127.264738);
+    const map = new kakao.maps.Map(document.getElementById("map"), {
+      center: center,
+      level: 4
     });
+
+    const { type, payloadB64 } = getParams();
+    const payload = b64ToJson(payloadB64);
+
+    // 아무 것도 못 받았으면 끝
+    if (!payload) {
+      console.log("빈 payload → 기본 지도만 표시");
+    } else {
+      if (type === "points") {
+        // payload: [{lat,lng,scaled_weight,station,weight}, ...]
+        payload.forEach(p => {
+          const size = Math.max(10, Math.min(60, Number(p.scaled_weight || 24)));
+          const pos = new kakao.maps.LatLng(p.lat, p.lng);
+          const img = new kakao.maps.MarkerImage(
+            "http://t1.daumcdn.net/localimg/localimages/07/2018/pc/img/marker_spot.png",
+            new kakao.maps.Size(size, size*1.35),
+            { offset: new kakao.maps.Point(size/2, size*1.35) }
+          );
+          const marker = new kakao.maps.Marker({ position: pos, image: img, title: `${p.station}: ${p.weight}` });
+          marker.setMap(map);
+        });
+
+      } else if (type === "routes") {
+        // payload: { routes: [[{lat,lng,color},...], ...], pickups: [{lat,lng,onboardingTime,...}, ...] }
+        const routes = payload.routes || [];
+        const pickups = payload.pickups || [];
+
+        routes.forEach(segList => {
+          if (!Array.isArray(segList) || segList.length < 2) return;
+          const color = segList[0].color || "#173F5F";
+          const path = segList.map(pt => new kakao.maps.LatLng(pt.lat, pt.lng));
+          const poly = new kakao.maps.Polyline({
+            path,
+            strokeWeight: 3,
+            strokeColor: color,
+            strokeOpacity: 0.9,
+            strokeStyle: "shortdash"
+          });
+          poly.setMap(map);
+        });
+
+        pickups.forEach((p, idx) => {
+          const pos = new kakao.maps.LatLng(p.lat, p.lng);
+          const size = 30;
+          const img = new kakao.maps.MarkerImage(
+            "http://t1.daumcdn.net/localimg/localimages/07/2018/pc/img/marker_spot.png",
+            new kakao.maps.Size(size, size*1.35),
+            { offset: new kakao.maps.Point(size/2, size*1.35) }
+          );
+          const title =
+            `탑승순서: ${idx+1}\n탑승시간: ${p.onboardingTime}\n승객 수: ${p.passengerCount}\n휠체어 수: ${p.wheelchairCount}\n서비스 유형: ${p.serviceType}`;
+          new kakao.maps.Marker({ position: pos, image: img, title }).setMap(map);
+        });
+
+      } else if (type === "links") {
+        // payload: [{start_lat,start_lon,end_lat,end_lon,count}, ...]
+        if (!Array.isArray(payload) || payload.length === 0) {
+          console.log("links payload empty");
+        } else {
+          const counts = payload.map(r => r.count || 0);
+          const minC = Math.min(...counts), maxC = Math.max(...counts);
+          const scale = v => {
+            if (maxC === minC) return 10;
+            const t = (v - minC) / (maxC - minC);
+            return Math.round(5 + t*(30-5));
+          };
+          const alpha = v => {
+            if (maxC === minC) return 0.8;
+            const t = (v - minC) / (maxC - minC);
+            return clamp(0.5 + t*(1.0-0.5), 0.4, 1.0);
+          };
+
+          payload.forEach(r => {
+            const path = [
+              new kakao.maps.LatLng(r.start_lat, r.start_lon),
+              new kakao.maps.LatLng(r.end_lat, r.end_lon)
+            ];
+            new kakao.maps.Polyline({
+              path,
+              strokeWeight: scale(r.count),
+              strokeColor: "#002642",
+              strokeOpacity: alpha(r.count),
+              strokeStyle: "solid"
+            }).setMap(map);
+          });
+        }
+
+      } else if (type === "polygons") {
+        // payload: GeoJSON FeatureCollection (features[].geometry.coordinates[0] = [lon,lat] 배열)
+        const fc = payload;
+        if (fc && fc.type === "FeatureCollection" && Array.isArray(fc.features)) {
+          fc.features.forEach(f => {
+            const coords = (((f||{}).geometry||{}).coordinates||[])[0];
+            if (!Array.isArray(coords)) return;
+            const path = coords.map(c => new kakao.maps.LatLng(c[1], c[0]));
+            const op = clamp(Number((((f||{}).properties||{}).opacity_value)||0.5), 0, 1);
+            new kakao.maps.Polygon({
+              path,
+              strokeWeight: 1,
+              strokeColor: "#000000",
+              strokeOpacity: 0.1,
+              fillColor: "#ED553B",
+              fillOpacity: op
+            }).setMap(map);
+          });
+        }
+      } else {
+        console.log("알 수 없는 type:", type);
+      }
+    }
   </script>
 </body>
 </html>
