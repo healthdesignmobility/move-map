@@ -149,6 +149,111 @@
         console.log("알 수 없는 type:", type);
       }
     }
+
+    const myOrigin = location.origin;
+  
+    // 2) 타입별 드로잉 함수 (기존 코드의 블록을 함수화해서 호출해도 되고,
+    //    아래처럼 payload를 그대로 기존 로직에 넣어 호출해도 됩니다.)
+    function drawPoints(payload) {
+      // payload: { center, level, locations: [...] }
+      if (!payload || !Array.isArray(payload.locations)) return;
+      payload.locations.forEach(p => {
+        const size = Math.max(10, Math.min(60, Number(p.scaled_weight || 24)));
+        const pos = new kakao.maps.LatLng(p.lat, p.lng);
+        const img = new kakao.maps.MarkerImage(
+          "http://t1.daumcdn.net/localimg/localimages/07/2018/pc/img/marker_spot.png",
+          new kakao.maps.Size(size, size*1.35),
+          { offset: new kakao.maps.Point(size/2, size*1.35) }
+        );
+        new kakao.maps.Marker({ position: pos, image: img, title: `${p.station}: ${p.weight}` }).setMap(map);
+      });
+    }
+  
+    function drawRoutes(payload) {
+      // payload: { center, level, routes: [{path:[{lat,lng}...], color, weight, opacity, style}], pickups:[...] }
+      (payload.routes || []).forEach(seg => {
+        const path = (seg.path || []).map(pt => new kakao.maps.LatLng(pt.lat, pt.lng));
+        new kakao.maps.Polyline({
+          path,
+          strokeWeight: seg.weight || 3,
+          strokeColor: seg.color || "#173F5F",
+          strokeOpacity: seg.opacity ?? 0.9,
+          strokeStyle: seg.style || "shortdash"
+        }).setMap(map);
+      });
+      (payload.pickups || []).forEach((p, i) => {
+        const pos = new kakao.maps.LatLng(p.lat, p.lng);
+        const size = 30;
+        const img = new kakao.maps.MarkerImage(
+          "http://t1.daumcdn.net/localimg/localimages/07/2018/pc/img/marker_spot.png",
+          new kakao.maps.Size(size, size*1.35),
+          { offset: new kakao.maps.Point(size/2, size*1.35) }
+        );
+        const title = `탑승순서: ${i+1}\n탑승시간: ${p.onboardingTime}\n승객 수: ${p.passengerCount}\n휠체어 수: ${p.wheelchairCount}\n서비스 유형: ${p.serviceType}`;
+        new kakao.maps.Marker({ position: pos, image: img, title }).setMap(map);
+      });
+    }
+  
+    function drawLinks(payload) {
+      // payload: { links: [{start_lat,start_lon,end_lat,end_lon,weight,opacity,color}, ...] }
+      (payload.links || []).forEach(r => {
+        const path = [
+          new kakao.maps.LatLng(r.start_lat, r.start_lon),
+          new kakao.maps.LatLng(r.end_lat, r.end_lon),
+        ];
+        new kakao.maps.Polyline({
+          path,
+          strokeWeight: r.weight || 8,
+          strokeColor: r.color || "#002642",
+          strokeOpacity: r.opacity ?? 0.8,
+          strokeStyle: "solid"
+        }).setMap(map);
+      });
+    }
+  
+    function drawPolygons(payload) {
+      // payload: { features: Feature[] }
+      (payload.features || []).forEach(f => {
+        const coords = (((f||{}).geometry||{}).coordinates||[])[0];
+        if (!Array.isArray(coords)) return;
+        const path = coords.map(c => new kakao.maps.LatLng(c[1], c[0]));
+        const op = Math.max(0, Math.min(1, Number((((f||{}).properties||{}).opacity_value)||0.5)));
+        new kakao.maps.Polygon({
+          path,
+          strokeWeight: 1,
+          strokeColor: "#000000",
+          strokeOpacity: 0.1,
+          fillColor: "#ED553B",
+          fillOpacity: op
+        }).setMap(map);
+      });
+    }
+  
+    // 3) postMessage 수신부
+    window.addEventListener("message", (e) => {
+      const data = e.data || {};
+      if (!data.type) return;
+  
+      if (data.type === "SET_MARKERS") {
+        drawPoints(data.payload || {});
+      } else if (data.type === "SET_ROUTES") {
+        drawRoutes(data.payload || {});
+      } else if (data.type === "SET_LINKS") {
+        drawLinks(data.payload || {});
+      } else if (data.type === "SET_GEOJSON") {
+        drawPolygons(data.payload || {});
+      }
+    });
+  
+    // 4) 로드되면 부모에게 준비완료 신호
+    try {
+      window.parent.postMessage({ type: "MAP_READY" }, "*");
+    } catch (e) {
+      console.warn("MAP_READY 보내기 실패:", e);
+    }
+  
+
+    
   </script>
 </body>
 </html>
