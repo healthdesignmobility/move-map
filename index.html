@@ -214,12 +214,13 @@
     }
   
     function drawPolygons(payload) {
-      // payload: { features: Feature[] }
       (payload.features || []).forEach(f => {
         const coords = (((f||{}).geometry||{}).coordinates||[])[0];
         if (!Array.isArray(coords)) return;
         const path = coords.map(c => new kakao.maps.LatLng(c[1], c[0]));
-        const op = Math.max(0, Math.min(1, Number((((f||{}).properties||{}).opacity_value)||0.5)));
+        const raw = (((f||{}).properties||{}).opacity_value);
+        const op = Math.max(0, Math.min(1, Number(raw == null ? 0 : raw)));
+        if (op <= 0) return;               // 값 없으면 스킵
         new kakao.maps.Polygon({
           path,
           strokeWeight: 1,
